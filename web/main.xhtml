@@ -1,0 +1,103 @@
+<?xml version='1.0'?>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:svg="http://www.w3.org/2000/svg">
+	<head>
+	<meta http-equiv="Content-Type" content="text/xhtml; charset=UTF-8"/>
+	<link type="text/css" rel="stylesheet" href="./main.css"/>
+	<script type="text/javascript" src="./main.js"></script>
+	<title>Oscilloscope</title>
+	</head>
+	<body>	
+		<svg:svg id="display">
+			<svg:line class="axis" x1="50%" y1="0%" x2="50%" y2="100%" />
+			<svg:line class="axis" x1="0%" y1="50%" x2="100%" y2="50%" />
+		</svg:svg>
+		<!-- For Channel 1 -->
+		<div id="channels">
+			<div class="channel" id="channel1">
+				<div class="name">Channel 1</div>
+				<b>Volts/Div:</b><input type="text" maxlength="3" size="3" value="1" class="vdiv" name="vdiv"/>
+				<select name="vdivunit">
+					<option value="V">V</option>
+					<option value="mV">mV</option>
+				</select>
+				<br/>
+				<b>Time/Div:</b><input type="text" maxlength="3" size="3" value="1" class="tdiv" name="tdiv"/>
+				<select name="tdivunit">
+					<option value="S">S</option>
+					<option selected="selected" value = "mS">mS</option>
+					<option value = "uS">uS</option>
+				</select>
+				<br/>
+				<b>Sampling</b><br/> 
+				rate:<input type="text" class="sampling_rate" name="sampling_rate"/><br/>
+				<b>Trigger</b><br/>
+				ON/OFF<input type="checkbox" class="onoff" name="trigger_on"/><br/>
+				slope:
+				<input type="radio" class="trigger_up" name="trigger_up"/>up
+				<input type="radio" class="trigger_down" name="trigger_down"/>down<br/>
+				level:<input type="text" maxlength="3" size="3" id="trigger_level" name="trigger_level"/>V<br/>	
+				<button name="apply">Apply</button>
+				<div class="style">Style</div>
+				<div id="style_menu">
+					Line color: 
+					<select name="color">
+						<option selected = "selected" value="red">red</option>
+						<option value="blue">blue</option>
+						<option value="green">green</option>
+					</select><br/>
+					Line style:
+					<select name = "line_style">
+						<option value="normal" selected = "selected">normal</option>
+						<option value="dashed">dashed</option>
+						<option value="bold">bold</option>
+					</select>
+				</div>
+			</div>
+			<div class="channel" id="channel2">
+				<div class="name">Channel 1</div>
+				<b>Volts/Div:</b><input type="text" maxlength="3" size="3" value="1" class="vdiv" name="vdiv"/>
+				<select name="vdivunit">
+					<option value="V">V</option>
+					<option value="mV">mV</option>
+				</select>
+				<br/>
+				<b>Time/Div:</b><input type="text" maxlength="3" size="3" value="1" class="tdiv" name="tdiv"/>
+				<select name="tdivunit">
+					<option value="S">S</option>
+					<option selected="selected" value = "mS">mS</option>
+					<option value = "uS">uS</option>
+				</select>
+				<br/>
+				<b>Sampling</b><br/> 
+				rate:<input type="text" class="sampling_rate" name="sampling_rate"/><br/>
+				<b>Trigger</b><br/>
+				ON/OFF<input type="checkbox" class="onoff" name="trigger_on"/><br/>
+				slope:
+				<input type="radio" class="trigger_up" name="trigger_up"/>up
+				<input type="radio" class="trigger_down" name="trigger_down"/>down<br/>
+				level:<input type="text" maxlength="3" size="3" id="trigger_level" name="trigger_level"/>V<br/>
+				<button name="apply">Apply</button>	
+				<div class="style">Style</div>
+				<div id="style_menu">
+					Line color: 
+					<select name="color">
+						<option value="red">red</option>
+						<option selected = "selected" value="blue">blue</option>
+						<option value="green">green</option>
+					</select><br/>
+					Line style:
+					<select name = "line_style">
+						<option value="normal" selected = "selected">normal</option>
+						<option value="dashed">dashed</option>
+						<option value="bold">bold</option>
+					</select>
+				</div>
+			</div>
+		</div>
+		<div id="footer">
+			<span><a href="help.htm">Help</a></span>
+			<span><a href="abt.htm">About</a></span>
+			<div id="transistar"> A <a href="http://transistar.com">transistar</a> creation.</div>
+		</div>
+	</body>
+</html>
