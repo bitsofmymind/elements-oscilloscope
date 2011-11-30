@@ -24,25 +24,34 @@
 #include <stdlib.h>
 #include <avr_pal.h>
 
-static Channel* instance;
+static Channel* instances[NUMBER_OF_CHANNELS];
 
-Channel::Channel():
+Channel::Channel(uint8_t number):
 	Resource(),
 	sample_ptr(extra_space + 1), //Init as if we already has samples stored
 	trigger_flags(0),
 	trigger_level(128)
 {
-	instance = this;
+	instances[number - 1] = this;
 
-	ADMUX = _BV(REFS0) +  //Using AVcc with external capacitor at AREF pin.
-			_BV(ADLAR); //Left Adjustement for 8 bit precision necessary
+	/*If this is the last channel being created.*/
+	if(number ==  NUMBER_OF_CHANNELS)
+	{
+		/*The ADC configuration is only done once and by the last channel that gets
+		 * instantiated. This ensure that no inconsisten state occur due to
+		 * read-modify-write while a conversion is running.*/
 
-	ADCSRA = _BV(ADEN) +  //Enables the ADC.
-			_BV(ADSC) +  //Start a conversion.
-			_BV(ADATE) +  //Auto-trigger enabled.
-			_BV(ADIE) +  //Interrup enable.
-			_BV(ADPS2) + _BV(ADPS1) + _BV(ADPS0); //Prescaler at 128 (See sampling_rate below)
-	sampling_rate = 9515; //Value taken from the comment below.
+		ADMUX = _BV(REFS0) +  //Using AVcc with external capacitor at AREF pin.
+				_BV(ADLAR) + //Left Adjustement for 8 bit precision necessary
+				NUMBER_OF_CHANNELS - 1; //So the conversion starts with the last channel.
+
+		ADCSRA = _BV(ADEN) +  //Enables the ADC.
+				_BV(ADSC) +  //Start a conversion.
+				_BV(ADATE) +  //Auto-trigger enabled.
+				_BV(ADIE) +  //Interrupt enable.
+				_BV(ADPS2) + _BV(ADPS1) + _BV(ADPS0); //Prescaler at 128 (See sampling_rate below)
+	}
+	sampling_rate = 9616 / NUMBER_OF_CHANNELS; //Value derived from instructions below.
 
 	/*An ADC conversion takes 13 cycles by default, here is a list giving the conversion rates
 	 * with F_CPU = 16 MHz
@@ -54,13 +63,18 @@ Channel::Channel():
 	 * Division Factor = 64, 832 cycles per conversion, 19230 conversion per second
 	 * Division Factor = 128, 1664 cycles per conversion, 9615 conversion per second
 	 *
+	 * Since we are alternating between channels, the sampling rate is also affected
+	 * by the number of active channels at any given time.
+	 *
 	 * This is in free running mode. To get a precise conversion rate, we should be
 	 * starting the conversion on a timer. It is also important to note that prescalers
 	 * 2, 4 are too fast for the firmware to process and that prescaler 8 would be a
 	 * severe hit on performance.
+	 *
 	 * */
 
 	//Nothing to set in ADCSRB
+	//
 	DIDR0 = _BV(ADC0D);
 	VERBOSE_PRINTLN_P("Channel ready...");
 
@@ -329,5 +343,23 @@ void Channel::store_sample(uint8_t sample)
 
 ISR(ADC_vect)
 {
-	instance->store_sample(ADCH);
+	/* Since we are in free-running mode, the interrupt retriggers the conversion
+	 * automatically (on a rising edge) and then proceeds to the service routine.
+	 * From that point on, we have only one ADC clock (varies according to the prescaler
+	 * value) to switch channel before conversion starts again and locks ADMUX.
+	 * ----------------------
+	 * See the MCU's datasheet chapter "Analog-to-Digital Conversion" section
+	 * "Changing Channel or Reference Selection".*/
+
+	/*Selects only the first 4 bits of ADMUX in order to get an index of the channel
+	 * we are at.*/
+	uint8_t index = ADMUX & 0x0F;
+
+	/*Switch channel, if the index is greated than the number of channels,
+	 * reset ADMUX:MUXx to channel 0, otherwise, increment it.*/
+	index >= NUMBER_OF_CHANNELS - 1 ? ADMUX &= 0xF0: ADMUX++;
+
+	/*Let the last channel store the acquired sample.*/
+	instances[index]->store_sample(ADCH);
+
 }

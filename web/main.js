@@ -77,7 +77,7 @@ function draw(channel)
 	var points = "";
 	if(channel.sampling_size > 1)
 	{
-		for( i = 0; i < channel.sampling_size; i += 1 )
+		for(var i = 0; i < channel.sampling_size; i += 1 )
 		{
 			var x = time_to_coord(i, channel.sampling_rate.value , channel.tdiv);
 			var y = adc_to_coord(channel.sample[i], channel.vdiv);
@@ -180,7 +180,7 @@ function rec_sample()
 			}
 			this.display.draw(this);
 		}
-		this.timer = setTimeout(function(o){ o.get_sample(); }, 200, this);
+		this.timer = setTimeout(function(o){ o.get_sample(); }, 3000, this);
 	}
 }
 function get_style()
@@ -236,7 +236,7 @@ function Channel(number, control, display)
 	this.vdiv_change = vdiv_change;
 	this.tdiv_change = tdiv_change;
 	this.get_style = get_style;
-	this.timer = setTimeout( function(o){ o.get_sample(); }, 1000 * Math.random(), this ); /*Does not work with IE (http://klevo.sk/javascript/javascripts-settimeout-and-how-to-use-it-with-your-methods/)*/
+	this.timer = setTimeout( this.get_sample(), 1000 * Math.random()); /*Does not work with IE (http://klevo.sk/javascript/javascripts-settimeout-and-how-to-use-it-with-your-methods/)*/
 	this.empty = true;
 	this.control = control;
 	this.vdivctl = control.children["vdiv"];
@@ -276,5 +276,5 @@ window.onload = function ()
 	 display = new Display(document.getElementById("display"));
 	 display.draw_grid();
 	 channels.push( new Channel(1, document.getElementById("channel1"), display) );
-	 /*channels.push( new Channel(2, document.getElementById("channel2"), display) );*/
+	 channels.push( new Channel(2, document.getElementById("channel2"), display) );
 }

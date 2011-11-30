@@ -29,11 +29,13 @@ int main(void)
 	Processing osc(NULL);
 	TCPIPStack tcpip;
 	EEPROM_24LCXX eeprom;
-	Channel ch1;
+	Channel ch1(1);
+	Channel ch2(2);
 	Blinker blinker(500, PIN6, &DDRD, &PORTD);
 
 	osc.redirect_url = "/fs/main.xhtml";
 	osc.add_child("ch1", &ch1);
+	osc.add_child("ch2", &ch2);
 	osc.add_child("fs", &eeprom);
 	osc.add_child("tcpip", &tcpip);
 	osc.add_child("blinker", &blinker);

@@ -20,8 +20,14 @@
 
 #include <core/resource.h>
 
+#define NUMBER_OF_CHANNELS 2
+
 class Channel: public Resource
 {
+
+	public:
+		//Cannot be accessed from within the ISR.
+		//static Channel* instances[NUMBER_OF_CHANNELS];
 
 	protected:
 		static const uptime_t max_request_age = 1000;
@@ -42,7 +48,7 @@ class Channel: public Resource
 		Queue<Request*> queue;
 
 	public:
-		Channel();
+		Channel(uint8_t number);
 
 	protected:
 		File* get_params(void);
