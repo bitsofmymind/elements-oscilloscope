@@ -24,34 +24,39 @@
 #include <stdlib.h>
 #include <avr_pal.h>
 
+/// Oscilloscope channels are stored in this array to be accessed by the ISR.
 static Channel* instances[NUMBER_OF_CHANNELS];
 
 Channel::Channel(uint8_t number):
 	Resource(),
-	sample_ptr(extra_space + 1), //Init as if we already has samples stored
+	// Initialize as if we already have samples stored.
+	sample_ptr(extra_space + 1),
 	trigger_flags(0),
 	trigger_level(128)
 {
+	// Store of reference to this channel for acces by the ISR.
 	instances[number - 1] = this;
 
-	/*If this is the last channel being created.*/
+	// If this is the last channel being created.
 	if(number ==  NUMBER_OF_CHANNELS)
 	{
 		/*The ADC configuration is only done once and by the last channel that gets
-		 * instantiated. This ensure that no inconsisten state occur due to
-		 * read-modify-write while a conversion is running.*/
+		 * instantiated. This ensure that no inconsistent state occur due to
+		 * a read-modify-write while a conversion is running.*/
 
-		ADMUX = _BV(REFS0) +  //Using AVcc with external capacitor at AREF pin.
-				_BV(ADLAR) + //Left Adjustement for 8 bit precision necessary
-				NUMBER_OF_CHANNELS - 1; //So the conversion starts with the last channel.
+		ADMUX = _BV(REFS0) +  // Using AVcc with external capacitor at AREF pin.
+				_BV(ADLAR) + // Left adjustment for 8 bit precision necessary.
+				NUMBER_OF_CHANNELS - 1; // Conversion starts with the last channel.
 
-		ADCSRA = _BV(ADEN) +  //Enables the ADC.
-				_BV(ADSC) +  //Start a conversion.
-				_BV(ADATE) +  //Auto-trigger enabled.
-				_BV(ADIE) +  //Interrupt enable.
-				_BV(ADPS2) + _BV(ADPS1) + _BV(ADPS0); //Prescaler at 128 (See sampling_rate below)
+		ADCSRA = _BV(ADEN) +  // Enables the ADC.
+				_BV(ADSC) +  // Start a conversion.
+				_BV(ADATE) +  // Auto-trigger enabled.
+				_BV(ADIE) +  // Interrupt enable.
+				// Prescaler at 128 (See sampling_rate below).
+				_BV(ADPS2) + _BV(ADPS1) + _BV(ADPS0);
 	}
-	sampling_rate = 9616 / NUMBER_OF_CHANNELS; //Value derived from instructions below.
+	 // Value derived from instructions below.
+	sampling_rate = 9616 / NUMBER_OF_CHANNELS;
 
 	/*An ADC conversion takes 13 cycles by default, here is a list giving the conversion rates
 	 * with F_CPU = 16 MHz
@@ -69,37 +74,48 @@ Channel::Channel(uint8_t number):
 	 * This is in free running mode. To get a precise conversion rate, we should be
 	 * starting the conversion on a timer. It is also important to note that prescalers
 	 * 2, 4 are too fast for the firmware to process and that prescaler 8 would be a
-	 * severe hit on performance.
-	 *
+	 * severe hit on performance. This could be mitigated by doing sample storing
+	 * in assembly or using very optimized static code.
 	 * */
 
-	//Nothing to set in ADCSRB
-	//
+	// Nothing to set in ADCSRB.
+
+	// Disable the digital input on the ADC pin.
+	/// TODO the pin should change with the channel.
 	DIDR0 = _BV(ADC0D);
+
 	VERBOSE_PRINTLN_P("Channel ready...");
 
 }
 
+/// The template that contains the parameters.
 #define CONTENT "{\"sr\":~,\"tf\":~,\"tl\":~}"
 
+/// The length of the template string.
 #define CONTENT_SIZE sizeof(CONTENT) - 1
 
+/// The parameter template stored in program memory.
 static const char content_P[] PROGMEM = CONTENT;
 
 File* Channel::get_params(void)
 {
+	// Create a file to hold the parameter program memory string..
 	File* f = new PGMSpaceFile(content_P, CONTENT_SIZE);
-	if(!f)
+
+	if(!f) // If there was no memory left for the file.
 	{
-		return NULL;
-	}
-	Template* t = new Template(f);
-	if(!t)
-	{
-		delete f;
-		return NULL;
+		return NULL; // Cannot proceed.
 	}
 
+	Template* t = new Template(f); // Create a template.
+
+	if(!t) // If there was no memory left for the template.
+	{
+		delete f; // Delete the file.
+		return NULL; // Cannot proceed.
+	}
+
+	// Add the template arguments.
 	t->add_narg(sampling_rate);
 	t->add_narg(trigger_flags);
 	t->add_narg(trigger_level);
@@ -109,106 +125,149 @@ File* Channel::get_params(void)
 
 Response::status_code Channel::process(Request* request, Response* response)
 {
-	if( !request->to_destination() )
+	if(!request->to_destination()) // If the request is at destination.
 	{
-			if(request->is_method(Request::GET))
+			if(request->is_method(Request::GET)) // If this is a GET request.
 			{
-				if(sample_ptr > sample_size)
+				if(sample_ptr > sample_size) // If a sample is ready.
 				{
-					//A sample is ready
-					File* body = get_sample();
+					File* body = get_sample(); // Retrieve the sample.
+
+					// If there was not enough memory to allocated the file.
 					if(!body)
 					{
-						return INTERNAL_SERVER_ERROR_500;
-					}
-					response->set_body(body, MIME::APPLICATION_OCTET_STREAM);
-					VERBOSE_PRINTLN_P("Sample ready");
-					return OK_200;
-				}
-				else
-				{
-					if(queue.queue(request))
-					{
-						//Queue is full
+						// Not enough resources to process the request.
 						return SERVICE_UNAVAILABLE_503;
 					}
+
+					// Set the sample file as the response's body.
+					response->set_body(body, MIME::APPLICATION_OCTET_STREAM);
+
+					VERBOSE_PRINTLN_P("Sample ready");
+
+					return OK_200;
+				}
+				else // If there is no sample ready yet.
+				{
+					// Queue the request to process it at a later time.
+					if(queue.queue(request))
+					{
+						return SERVICE_UNAVAILABLE_503; // Queue is full.
+					}
+
 					VERBOSE_PRINTLN_P("Sample not ready ");
-					schedule(1);
+
+					schedule(1); // Run the resource in 1 ms.
+
 					return RESPONSE_DELAYED_102;
 				}
 			}
-			return NOT_IMPLEMENTED_501;
+
+			return NOT_IMPLEMENTED_501; // Request method not implemented.
 
 	}
-	else if( request->to_destination() == 1)
+	/* If the request is one resource before destionation, it might refer to
+	 * sub resources of the channel. */
+	else if(request->to_destination() == 1)
 	{
-		request->next();
+		request->next(); // Go to the next resource.
+
+		// If the request is for the parameters resource.
 		if(!strcmp(request->current(), "pr"))
 		{
-
-			if(request->is_method(Request::POST))
+			if(request->is_method(Request::POST)) // If it is a POST request.
 			{
-				char buffer[8];
+				char buffer[8]; // A buffer to store form data.
+
+				// Find an argument named sr (sampling rate).
 				uint8_t len = request->find_arg("sr", buffer, 7);
-				if(len)
+
+				if(len) // If there is an argument for the sampling rate.
 				{
-					buffer[len] = '\0';
+					buffer[len] = '\0'; // Terminate the string.
+					// Convert it to an integer and set it.
 					sampling_rate = atoi(buffer);
 				}
 
+				// Find an argument named tl (trigger level).
 				len = request->find_arg("tl", buffer, 7);
-				if(len)
+
+				if(len) // If there is an argument for the trigger level.
 				{
-					buffer[len] = '\0';
+					buffer[len] = '\0'; // Terminate the string.
+					// Convert it to an integer and set it.
 					ATOMIC { trigger_level = atoi(buffer); }
 				}
 
+				// Find an argument named tf (trigger flags).
 				len = request->find_arg("tf", buffer, 7);
-				if(len)
+
+				if(len) // If there is an argument for the trigger flags.
 				{
-					buffer[len] = '\0';
+					buffer[len] = '\0'; // Terminate the string.
+					// Convert it to an integer and set it.
 					ATOMIC { trigger_flags = atoi(buffer); }
 				}
 
-				goto get;
+				goto get; // Proceed the rest of the request like a GET.
 			}
-			else if (request->is_method(Request::GET))
+			// If this ia GET request.
+			else if(request->is_method(Request::GET))
 			{
 				get:
 
-				File* body = get_params();
+				File* body = get_params(); // Get the parameters for this channel.
+
+				/* If there was not enough memory to allocate a file to hold
+				 * the parameters JSON array. */
 				if(!body)
 				{
-					return INTERNAL_SERVER_ERROR_500;
+					// Not enough resources to process the request.
+					return SERVICE_UNAVAILABLE_503;
 				}
+
+				// Set the parameters file as the response body.
 				response->set_body(body, MIME::APPLICATION_JSON);
+
 				return OK_200;
 			}
-			return NOT_IMPLEMENTED_501;
+
+			return NOT_IMPLEMENTED_501; // Request method not implemented.
 		}
+
+		/* This url cannot be processed, pass it to child resources. Because
+		 * we jumped to the next resource earlier, the request url needs to be
+		 * rewinded.*/
 		request->previous();
 	}
 
-	return PASS_308;
+	return PASS_308; // Cannot process this request.
 }
 
 File* Channel::get_sample(void)
 {
-	char* s = (char*)ts_malloc(sample_size);
-	if(!s)
+	// Allocate a buffer to hold the current sample.
+	char* sample = (char*)ts_malloc(sample_size);
+
+	if(!ssample) // If the buffer could not be allocated.
 	{
-		return NULL;
+		return NULL; // Not enough memory to proceed.
 	}
 
 	ATOMIC
 	{
-		memcpy(s, sample_buffer, sample_size);
+		// Copy the statically allocated buffer into the newly allocated one.
+		memcpy(sample, sample_buffer, sample_size);
 	}
 
-	MemFile* f = new MemFile(s, sample_size, false);
-	if(!f)
+	// Wrap the sample into a file.
+	MemFile* f = new MemFile(sample, sample_size, false);
+
+	if(!f) // If the file could not be allocated.
 	{
-		ts_free(s);
+		ts_free(s); // The sample is lost.
+		// return NULL; // f will be null.
+		// Not enough memory to proceed.
 	}
 
 	return f;
@@ -217,127 +276,185 @@ File* Channel::get_sample(void)
 
 void Channel::run(void)
 {
-	Request* request;
+	Request* request = NULL;
+
 	VERBOSE_PRINTLN_P("Channel run ");
+
+	/* Remove the requests that have time out from the queue an get to the
+	 * request to which the sample needs to be sent.*/
 	while(true)
 	{
-		request = queue.peek();
-		if(!request)
+		///TODO move the next line into the loop condition.
+
+		request = queue.peek(); // Is there a request waiting for a sample?
+
+		if(!request) // If there is no waiting request.
 		{
-			break;
+			break; // Nothing else to do.
 		}
-		if(request->age + max_request_age < get_uptime() )
+
+		// If the request has timed out.
+		if(request->age + max_request_age < get_uptime())
 		{
 			VERBOSE_PRINTLN_P("Request too old");
-			request = queue.dequeue();
+
+			request = queue.dequeue(); // Remove the request from the queue.
+
+			// Craft a response to inform the client his request has timed out.
 			Response* response = new Response(REQUEST_TIMEOUT_408, request);
-			if(!response)
+			if(!response) // If the response could no be allocated.
 			{
-				delete request;
+				delete request; // Get rid of the request.
+
+				// Nothing more we can do, let the client time out at its end.
 				return;
 			}
-			dispatch(response);
+
+			dispatch(response); // Dispatch the response to the client.
 		}
-		else
+		else // Process that request.
 		{
 			VERBOSE_PRINTLN_P("No Request too old");
-			break;
+			break; // Keep the current requests in the queue.
 		}
 	}
-
-	if( request && trigger_flags & DONE_SAMPLE )
+	// If there is a request waiting for a sample and one is ready.
+	if(request && trigger_flags & DONE_SAMPLE)
 	{
 		VERBOSE_PRINTLN_P("Got data!");
-		while(true)
+
+		while(true) // Process all requests in the queue.
 		{
-			request = queue.dequeue();
-			if(!request)
+			request = queue.dequeue(); // Dequeue the oldest request.
+
+			if(!request) // If there are no more requests in the queue.
 			{
 				break;
 			}
+			// Craft a response that will contain the sample.
 			Response* response = new Response(OK_200, request);
-			if(!response)
+
+			if(!response) // If the response could not be allocated.
 			{
-				delete request;
-				break;
+				delete request; // Drop the request and let the client time out.
+				break; // Cannot proceed.
+
+				/* Do not empty the queue, maybe there will be resources available
+				 * during the next run to process the next request. */
 			}
-			File* sample = get_sample();
-			if(!sample)
+
+			File* sample = get_sample(); // Get the current sample.
+			if(!sample) // If the sample file could no be allocated.
 			{
-				response->response_code_int = INTERNAL_SERVER_ERROR_500;
+				// Not enough memory to get the sample.
+				response->response_code_int = SERVICE_UNAVAILABLE_503;
 			}
 			else
 			{
+				// Set the sample as the body.
 				response->set_body(sample, MIME::APPLICATION_OCTET_STREAM);
 			}
-			dispatch(response);
+
+			dispatch(response); // Dispatch the response to the client.
 		}
 	}
-	else if(request)
+	else if(request) // If a request is waiting for a sample but none is ready.
 	{
-		schedule(1);
-		return;
+		schedule(1) // Process this resource again in 1 ms.
+
+		return; // Done.
 	}
 
-	schedule(NEVER);
+	schedule(NEVER); // No requests waiting for a sample.
 }
 
 void Channel::store_sample(uint8_t sample)
 {
-	//have to save the sample here to compare it with trigger
+	// Have to save the sample here to compare it with trigger.
+	sample_buffer[sample_ptr] = sample; // Save the sample.
 
-	sample_buffer[sample_ptr] = sample;
+	/* When sampling has been restarted, sample_ptr is set to
+	 * extra_space + 1 so there is no danger of buffer overrun.*/
 
+	// If the trigger is on but has not been triggered yet.
 	if((trigger_flags & TRIGGER_ON) && !(trigger_flags & TRIGGERED) )
 	{
+		// If the trigger is on the up slope.
 		if(trigger_flags & TRIGGER_SLOPE_UP)
 		{
+			// If the slope is not going up.
 			if(sample_buffer[sample_ptr] < sample_buffer[sample_ptr - 1] ||
-					sample_buffer[sample_ptr -1 ] < sample_buffer[sample_ptr - 2])
+				sample_buffer[sample_ptr -1 ] < sample_buffer[sample_ptr - 2])
 			{
+				// Only keep the last two samples.
 				sample_buffer[sample_ptr - 2] = sample_buffer[sample_ptr - 1];
 				sample_buffer[sample_ptr - 1] = sample_buffer[sample_ptr];
-				return;
+
+				return; // No triggering.
 			}
+
+			// If the sample is under the trigger level.
 			if(sample < trigger_level)
 			{
+				/// TODO same as above.
+				// Only keep the last two samples.
 				sample_buffer[sample_ptr - 2] = sample_buffer[sample_ptr - 1];
 				sample_buffer[sample_ptr - 1] = sample_buffer[sample_ptr];
-				return;
+
+				return; // No triggering.
 			}
 		}
-		else
+		else // Else it is on the down slope.
 		{
+			// If the slope is not going down.
 			if(sample_buffer[sample_ptr] > sample_buffer[sample_ptr - 1] ||
-					sample_buffer[sample_ptr -1 ] > sample_buffer[sample_ptr - 2])
+				sample_buffer[sample_ptr -1 ] > sample_buffer[sample_ptr - 2])
 			{
+				// Only keep the last two samples.
 				sample_buffer[sample_ptr - 2] = sample_buffer[sample_ptr - 1];
 				sample_buffer[sample_ptr - 1] = sample_buffer[sample_ptr];
-				return;
+
+				return;  // No triggering.
 			}
+
+			// If the sample is over the trigger level.
 			if(sample > trigger_level)
 			{
+				/// TODO same as above.
+				// Only keep the last two samples.
 				sample_buffer[sample_ptr - 2] = sample_buffer[sample_ptr - 1];
 				sample_buffer[sample_ptr - 1] = sample_buffer[sample_ptr];
-				return;
+
+				return;  // No triggering.
 			}
 		}
-		trigger_flags |= TRIGGERED;
+
+		trigger_flags |= TRIGGERED; // Triggering has occurred.
 	}
 
-	sample_ptr++;
+	sample_ptr++; // Start saving the sample.
 
 	if(sample_ptr == sample_size + extra_space)
 	{
 		sample_ptr = extra_space - 1;
-		memcpy( sample_buffer, sample_buffer + sample_size, extra_space );
-		trigger_flags &= ~DONE_SAMPLE;
+
+		/* Copy the last "extra_space" bytes to the beginning of the sample
+		 * buffer so trigerring can be verified from the end of the last sample. */
+		memcpy(sample_buffer, sample_buffer + sample_size, extra_space);
+		trigger_flags &= ~DONE_SAMPLE; // Waiting for a new sample.
 	}
 
-	if(sample_ptr == sample_size)
+	if(sample_ptr == sample_size) // If a full sample has been acquired.
 	{
-		trigger_flags &= ~TRIGGERED;
-		trigger_flags |= DONE_SAMPLE;
+		trigger_flags &= ~TRIGGERED; // No longer triggered.
+		trigger_flags |= DONE_SAMPLE; // Done acquiring a sample.
+
+		/* Let acquisition go for another "extra_sample" before starting a
+		 * new one, this will give enough time for clients to get the last
+		 * sample. Here, a queue to keep samples cannot be because as
+		 * well as consuming too much memory, it could introduce a lag.*/
+
+		/// TODO use a variable instead of extra space to pause acquisition.
 	}
 }
 
@@ -355,7 +472,7 @@ ISR(ADC_vect)
 	 * we are at.*/
 	uint8_t index = ADMUX & 0x0F;
 
-	/*Switch channel, if the index is greated than the number of channels,
+	/*Switch channel, if the index is greater than the number of channels,
 	 * reset ADMUX:MUXx to channel 0, otherwise, increment it.*/
 	index >= NUMBER_OF_CHANNELS - 1 ? ADMUX &= 0xF0: ADMUX++;
 

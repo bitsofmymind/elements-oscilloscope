@@ -20,44 +20,127 @@
 
 #include <core/resource.h>
 
+/// The number of channels on the oscilloscope.
 #define NUMBER_OF_CHANNELS 2
 
+/**
+ * This resource is a signal acquisition channel.
+ * The following are the list of sub-resources defined inside the class:
+ * - /: sample data octet stream
+ * - /pr: parameters JSON array (GET)
+ *    - sr: sampling rate (argument)
+ *    - tl: trigger level (argument)
+ *    - tf: trigger flags (argument)
+ *
+ * */
 class Channel: public Resource
 {
-
 	public:
-		//Cannot be accessed from within the ISR.
-		//static Channel* instances[NUMBER_OF_CHANNELS];
+
+		// Cannot be accessed from within the ISR.
+		// static Channel* instances[NUMBER_OF_CHANNELS];
 
 	protected:
+		///TODO the following should be converted to defines in order to save on RAM.
+
+		/// The delay after which a request expires.
 		static const uptime_t max_request_age = 1000;
+
+		/// The size in bytes of a sample.
 		static const uint8_t sample_size = 100;
+
+		/** The amount of extra space after the end of the buffer. */
 		static const uint8_t extra_space = 20;
 
+		/** The sampling rate in samples / second. This value is configurable
+		 * through the web interface. */
 		uint16_t sampling_rate;
-		volatile uint8_t sample_ptr;
-		uint8_t sample_buffer[sample_size + extra_space];
 
+		/// The location where sampling is at in the sample buffer.
+		volatile uint8_t sample_ptr;
+
+		/// The buffer that holds the sample.
+		uint8_t sample_buffer[sample_size + extra_space];
+		/* This buffer is declared statically for the reason that there
+		 * is always a minimum of two sample holding buffers in existence. This
+		 * one, where the current sample is being saved, an another dynamically
+		 * allocated that is being sent to a client that requested it. Since we
+		 * always need a buffer to hold the current sample it saves memory
+		 * an processing time to always have it in place. */
+
+		/// Sample acquisition is done.
 		#define DONE_SAMPLE _BV(3)
+
+		/// Triggering has occurred.
 		#define TRIGGERED _BV(2)
+
+		/// If triggering should be on the up slope.
 		#define TRIGGER_SLOPE_UP _BV(1)
+
+		/// If there should be triggering for sample acquisition.
 		#define TRIGGER_ON _BV(0)
+
+		/** Configuration flags for triggering.
+		 * 0 TRIGGER_ON
+		 * 1 TRIGGER_SLOPE_UP
+		 * 2 TRIGGERED
+		 * 3 DONE SAMPLING
+		 * 4 UNUSED
+		 * 5 UNUSED
+		 * 6 UNUSED
+		 * 7 UNUSED
+		 * */
 		volatile uint8_t trigger_flags;
+
+		/// The level in ADC units at which triggering should occur.
 		volatile uint16_t trigger_level;
 
+		/// The queue were requests are kept.
 		Queue<Request*> queue;
 
 	public:
+
+		/**
+		 * Class constructor.
+		 * @param number the channel number starting from 1 and going up to
+		 * NUMBER_OF_CHANNELS.
+		 * */
 		Channel(uint8_t number);
 
 	protected:
-		File* get_params(void);
-		virtual Response::status_code process(Request* request, Response* response);
-		virtual void run(void);
-		File* get_sample(void);
-	public:
-		void store_sample(uint8_t sample);
 
+        /// Process a request message.
+        /**
+         * @param request the request to process.
+         * @param response the response to fill if a response should be returned (which
+         * depends on the status code).
+         * @return the status_code produced while processing the request.
+         */
+		virtual Response::status_code process(Request* request, Response* response);
+
+		/// Does processing on the resource.
+		virtual void run(void);
+
+		/**
+		 * Get the most recent sample.
+		 * @return a file containing the most recent sample.
+		 * */
+		File* get_sample(void);
+
+		/**
+		 * Get the current parameters for the channel.
+		 * @return a file containing the parameters for the channel.
+		 * */
+		File* get_params(void);
+
+	public:
+
+		/**
+		 * Store a sample from the ADC. This method is meant to be called from
+		 * the ADC's interrupt service routine.
+		 * @param sample the sample just acquired by the ADC.
+		 * */
+		void store_sample(uint8_t sample);
 };
 
 #endif /* CHANNEL_H_ */

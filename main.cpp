@@ -1,4 +1,4 @@
-/* main.cpp - startup function for an oscilloscope
+/* main.cpp - startup function for the oscilloscope
  * Copyright (C) 2011 Antoine Mercier-Linteau
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,28 +17,37 @@
 
 #include "channel.h"
 #include <tcpip/tcpip.h>
-#include <eeprom/eeprom_24LCxx.h>
+//#include <eeprom/eeprom_24LCxx.h>
 #include <core/processing.h>
 #include <led/blink.h>
 #include <pal/pal.h>
+#include <serial/eserial.h>
 
+/**
+ * This program is a web based oscilloscope built using the elements framework.
+ * It is meant to run on an arduino duemilanove with a 24LC256 EEPROM for storage
+ * and a Microchip ENC28J60 network interface for ethernet.
+ *
+ * It uses the ATMega328P's two first ADC pins as channels for signal acquisition.
+ * */
 int main(void)
 {
-	init();
+	init(); // Initialize the framework.
 
-	Processing osc(NULL);
-	TCPIPStack tcpip;
-	EEPROM_24LCXX eeprom;
-	Channel ch1(1);
-	Channel ch2(2);
-	Blinker blinker(500, PIN6, &DDRD, &PORTD);
+	Processing oscilloscope(NULL); // The processing resource.
+	TCPIPStack tcpip; // The TCPIP stack interfacing with the ENC28J60.
+	EEPROM_24LCXX eeprom; // The EEPROM that stores the CSS, JS and HTML files.
+	Channel channe1(1); // The oscilloscope's first channel.
+	Channel channel2(2); // The oscilloscope's second channel.
 
-	osc.redirect_url = "/fs/main.xhtml";
-	osc.add_child("ch1", &ch1);
-	osc.add_child("ch2", &ch2);
-	osc.add_child("fs", &eeprom);
-	osc.add_child("tcpip", &tcpip);
-	osc.add_child("blinker", &blinker);
+	 // Redirect the server's root to this url.
+	oscilloscope.redirect_url = "/fs/main.xhtml";
 
-	osc.start();
+	// Add all the resources as child of the processing resource.
+	oscilloscope.add_child("ch1", &channel1);
+	oscilloscope.add_child("ch2", &channel2);
+	oscilloscope.add_child("fs", &eeprom);
+	oscilloscope.add_child("tcpip", &tcpip);
+
+	oscilloscope.start(); // Start the oscilloscope.
 }
