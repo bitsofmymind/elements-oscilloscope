@@ -1,0 +1,76 @@
+body
+{
+	font-family: Arial;
+}
+
+#display
+{
+	border: 2px solid;
+	float: left;
+	width: 500px;
+	height: 500px;
+}
+
+.axis
+{
+	stroke:rgb(99,99,99);
+	stroke-width:3;
+}
+
+.grid
+{
+	stroke:rgb(99,99,99);
+	stroke-width:1;
+}
+
+.mark
+{
+	stroke:rgb(99,99,99);
+	stroke-width:2;
+}
+
+.waveform
+{
+	stroke-width:2;
+	stroke:blue;
+	fill: none;
+}
+
+#channels
+{
+	border: 2px solid;
+	float: left;
+	margin-left: 1em;
+}
+
+.name
+{
+	text-align: center;
+}
+
+.channel
+{
+	border: 2px solid;
+	padding: 2px;
+	margin: 2px;
+}
+
+#style
+{
+}
+
+#style_menu
+{
+}
+
+#footer
+{
+	clear: both;
+}
+
+#transistar
+{
+	font-style: italic;
+	font-size: 10px; 
+	text-align: center;
+}
